@@ -1,5 +1,6 @@
-
 https://github.com/jbennettgit/NADSM_PLOSONE
+
+For more details on the operation of this code please see NADSM_SM_PLoS_v2.pdf.
 
 Unpack the zip file somewhere, which will create a directory of the
 same name.  The directory contains the model code for the paper
