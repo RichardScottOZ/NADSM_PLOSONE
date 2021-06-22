@@ -1,0 +1,273 @@
+Unpack the zip file somewhere, which will create a directory of the
+same name.  The directory contains the model code for the paper
+'Retrodicting the Rise, Spread, and Fall of Large-scale States in the
+Old World' by Bennett. The model code is named 'NADSM' for
+Nomadic-Agrarian Demographic-Structural Model.  The directory also
+contains a single geograpy datafile OldWorld_HF50.pkl that was used in
+the reported simulations (a MATLAB-readable version is available in
+OldWorld_HF50.mat).  It describes the Afro-Euasian regional geography
+and their connections, and contains the state locations, per century,
+from Turchin et al. 2013 and an estimate from Kaplan et al. 2010
+('KK10') of the total population in Afro-Eurasia from 1500 BCE to 1500
+CE.
+
+Requirements:
+
+The code requires python 3.7 with the following python packages installed:
+ numpy
+ scipy
+ matplotlib
+ multiprocessing
+
+If you want the code to make movies of state spread you must install the
+ffmpeg program; this is optional.
+
+To simply run the model, in the source directory, run:
+
+python3 NADSMX.py --show_figures OldWorld_HF50
+
+You may want to redirect the output to puruse later. Running this will
+(re)create the subdirectory NADSMX_OldWorld_HF50, which, depending on
+the options chosen, will contain several files.  Most of the detailed
+results are dumped in a MATLAB-readable trial_N.mat file, where N is
+the trial.  Typical single simulation runtimes are around 10 minutes,
+depending on display options and machine speeds.
+
+The framework code allows you to specify various options; see below.
+Most support debugging operations.  However, the following are of
+note:
+
+-X <experiments> allows you to specify various experiments mentioned
+ in the article; see the available tags in the NADSMX.py code.
+
+--n_trials <n> allows you to run several independent trials; if your
+  machine has several cores it will use multi-processing (MP) to run
+  several in parallel.  Log files are produced separately.
+
+--show_figures generates python versions of the statistics figures.
+
+--make_movie <step> generates a movie displaying the states every <step> years.
+
+>> python3 NADSMX.py --help 
+usage: NADSMX.py [-h] [-m model] [-v] [-g directory] [-c directory] [-o directory] [-t tag] [-X [expr [expr ...]]] [--seed SEED] [--n_trials N] [--no_mp]
+                 [--profile] [--expand_supers] [--disable_nomads] [--disable_nc] [--show_figures] [--make_movie step] [--last_year year]
+                 [--compare_polity_size #regions]
+                 geography_name
+
+Simulate nomadic and agrarian states in a geography
+
+positional arguments:
+  geography_name        The geography to use
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -m model              Model name to use
+  -v                    Verbose output
+  -g directory          Directory for geographies
+  -c directory          Directory for code
+  -o directory          Directory for output files
+  -t tag                Output directory tag
+  -X [expr [expr ...]]  Select experiment(s)
+  --seed SEED           Random seed for the trial
+  --n_trials N          Number of trials
+  --no_mp               Disable multiprocessing
+  --profile             Gather timing statistics
+  --expand_supers       Expand supers code
+  --disable_nomads      Disable nomad formations
+  --disable_nc          Disable nomad confederation formation
+  --show_figures        Display and save figures
+  --make_movie step     Make a movie framed every step years
+  --last_year year      Stop run in this year
+  --compare_polity_size #regions
+                        Compare polities >= #regions
+
+Code structure and operation:
+-----------------------------
+
+The code uses an object-oriented approach so different models could
+share the same execution framework and inherit from one another (e.g.,
+NADSM inherits the Population model (Bennett, 2015)).  While efficient
+for coding and debugging, this scheme makes it somewhat hard to just
+read the code and get a sense of the flow.  To make reading the code a
+little easier, I wrote some code to 'expand' the object-oriented code
+into a more readable 'linear' version; see the expanded files in the
+expanded_src directory.  In particular, for the main model code look
+at expanded_src/NADSM.py after reading the following description of
+the normal flow.
+
+The main structural core and execution framework is found in WHM.py
+(World Historical Model).  At the bottom of this file you'll find the
+__main__ tag and a call to:
+
+execute(WorldHistoricalModel)
+
+This calls the execute() function in Utils.py, which takes a reference
+to a model class to simulate.  The execute() function first parses the
+command line to find the geography to run the model against and other
+options and then instantiates the model class specified and deals with
+MP stuff, etc. [Note: You never really run 'python3 WHM.py
+OldWorld_HF50' since, as you'll see, it won't do anything.  If you
+look at the bottom of NADSMX.py you'll see an execute(NADSMX) which
+instantiates the nomad/agrarian model and runs it instead.]
+
+Continuing with WHM.py, the __init_ method defined on the
+WorldHistoricalModel class runs the following:
+
+    PolityType = Polity # class variables for the polity 'factory'
+    TerritoryType = Territory # class variable for the territory 'factory'
+
+    def __init__(self,geography_name=None,model_name=None):
+        self.start_time = time.time() # for simple elapsed time
+        global whm
+        whm = self # set package global
+
+        self.geography_name = geography_name
+        self.name = model_name
+        self.parameter_description = ''
+        self.n_trials = 1
+        
+        # Start throat-clearing ...
+        self.load_geography(geography_name)
+        # Do this after loading geography since it supplies data needed for parms
+        self.initialize_parameters()
+        print_scalar_members(self,header="Parameters after initialization:",footer="",indent="   ")
+
+        self.establish_territories()
+        self.initialize_chronicler()
+        # End throat-clearing ...
+
+        print 'Setup time: %.1fs' % (time.time() - self.start_time)
+
+You can read load_geography(), initialize_parameters(), etc. at your
+leisure.  Once the main model instance is created (and assigned to the
+global variable 'whm' for fast and easy access) control passes back to
+execute.  It continues operation by calling a function world_unfold()
+given the model instance.  (This is a helper function for the MP
+world, which only marshalls function, not method, calls).  That
+function ensures there is a separate trial log file if you are running
+MP, delays a little on each thread to force different random number
+seeds based on the time-of-day clock, and then finally calls the
+unfold() method on the model instance.
+
+The unfold() method calls setup_for_trail() to modify any last-minute
+parameters for this trial--handy if varying a parameter for
+sensitivity analysis on each trial--and then maps over each 'year' in
+the simulation (nominally every 2 years from -1500 to 1500, see
+initialize_parameters()) and runs advance_history():
+
+
+    def unfold(self,trial):
+
+        self.start_time = time.time() # restart timer
+        self.trial = trial
+        try:
+            self.setup_for_trial()
+            print_scalar_members(self,header="Parameters for trial %d:" % trial,footer="",indent="   ") # DEBUG
+
+            for self.this_year in self.years:
+                self.advance_history()
+
+            print 'End of history' # BREAK here to inspect the final datastructures
+            print 'Unfold time (%d): %.1fs' % (trial,time.time() - self.start_time)
+            self.finalize_chronicler()
+        except RuntimeError, exception:
+            import traceback
+            print "Unexpected error:", traceback.format_exc()
+
+The advance_history() method, shown below, is, finally, the meat of
+the matter: 
+
+    # This is the main method that moves things along each 'year'
+    def advance_history(self):
+        # Advance history
+        self.orders = [] # reset here in case deus_ex_machina() wants to use this mechanism for its fiat
+
+        self.deus_ex_machina() # possibly update the world and people by fiat
+        # Fait accompli...
+
+        # If we collapse during state_of_the_union() or create polities during war
+        # self.polities strictly grows and we will enumerate them here...
+        for polity in self.polities:
+            if polity.state is POLITY_ALIVE:
+                # update state, determine dead, current borders, bordering polities
+                polity.state_of_the_union() 
+        # perform world-wide calculations for all polities.
+        self.state_of_the_world()
+
+        # The world is somewhat stable so checkpoint.
+        self.chronicle()
+        
+        for polity in self.polities:
+            if polity.state is POLITY_ALIVE:
+                self.orders.extend(polity.machiavelli())
+
+        if False and self.orders: # DEBUG
+            print '%s: %d orders' % (pretty_year(self.this_year),len(self.orders))
+        random.shuffle(self.orders)
+        #DEBUG print self.orders #DEBUG
+        for order in self.orders:
+            order.execute()
+
+At each timestep the code first runs the 'deus_ex_machina()' method
+(abbreviated DXM).  This method, if any, does what is says: reaches in
+and changes things arbirarily.  I use this method to create some
+initial polities, double intensification in 1000CE, start the nomadic
+diffusion in 1000BCE, etc.  All the historically exogenous operations
+happen in this method.  Most of the time this method does nothing.
+
+After the DXM 'god' has had its way, advance_history() maps over a
+list of all the polities ever produced and if they are still alive
+calls their 'state_of_the_union()' method (abbreviated SOU) which
+allows each state to take stock of things, grow and migrate
+population, update various statistical variables (like duration, size,
+total population, etc.), determine if it is time to collapse, etc.
+Once each state has been reviewed, there is a call to the model's
+state_of_the_world() method that can run global computations, if any,
+based on the computations of each of the polities; at the moment only
+some statistics are computed.  Next the code calls the 'chronicle()'
+method that takes whatever snapshots of data structures for debugging,
+updates plots, etc. before things change again.
+
+Next advance_history() again maps over all the alive polities and
+calls their machiavelli() (abbreviated mach) method which is
+responsible for figuring out what the state will do next and writes
+'orders' (creating instances of the model's specialization of the
+Order class) that will eventually actually do whatever the model
+behavior specifies (in NADSM, annex territories, join confederations,
+etc.)  All the orders, if any, from each alive polity are collected,
+shuffled and the executed() in random order.  Each order is
+responsible for checking that it is still good-to-go in case a prior
+order has invalidated its assumptions.
+
+Once all the advance_history() calls are done for all the time steps
+the chronicler is 'finalized' in unfold() to dump any accumulated or
+residual datastructures, save files, and that's it!
+
+The actual models (e.g., NADSM, Population, ElitePopulation) specify
+classes that inherit from the main classes in WHM and then override
+these key methods, calling super() at the right time with 'before' and
+'after' bits of code as appropriate to the model.
+
+The implementation of the nomad/agrarian model can be found in
+NADSM.py, although the expanded version in expanded_src is likely more
+readable.  The main NADSM class overrides the PolityType and
+TerritoryType WHM class variables above so the appropriate polities
+and territory types get made.
+
+The NADSMX 'model' (note the 'X') defines a wrapper class of NADSM and
+is just used to define 'experiments' by the overriding
+initialize_parameters() method on the NADSM class/model found in
+NADSM.py.  This permits just changing a subset of parameters according
+to various experiments specified from the command line (e.g., -X
+camels_600BCE_6M), leaving the main code in NADSM.py to capture the
+nominal behavior.
+
+Finally, the file NADSMX_driver.py is code that runs the driver()
+function in Utils.py, which creates a timestamped directory, then
+copies all the code and data to the subdirectory and runs the
+indicated model code on several possible geographies (which will
+create their own subdirectories below that), plus, optionally, map
+over and set various parameters for sensitivity analysis, etc.
+Copying code is also convenient to record any code used for different
+experimental runs so you can diff versions to remind yourself what
+changed, etc.
