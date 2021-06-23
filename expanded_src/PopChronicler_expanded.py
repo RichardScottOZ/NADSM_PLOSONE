@@ -525,7 +525,7 @@ class PopChronicler(Chronicler):
             # Add parameters to trial data
             for tag in print_scalar_members(self,print_values=False):
                 trial_data[tag] = getattr(self,tag,'')
-
+            trial_data['unfold_time'] = time.time() - self.start_time # seconds
             sio.savemat(os.path.join(self.chronicler_directory,trial_basename(self,'trial%s.mat')), trial_data)
 
 
