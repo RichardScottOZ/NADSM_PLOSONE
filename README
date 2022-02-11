@@ -9,7 +9,7 @@ Old World' by Bennett. The model code is named 'NADSM' for
 Nomadic-Agrarian Demographic-Structural Model.  The directory also
 contains a single geograpy datafile OldWorld_HF50.pkl that was used in
 the reported simulations (a MATLAB-readable version is available in
-OldWorld_HF50.mat).  It describes the Afro-Euasian regional geography
+OldWorld_HF50.mat).  It describes the Afro-Eurasian regional geography
 and their connections, and contains the state locations, per century,
 from Turchin et al. 2013 and an estimate from Kaplan et al. 2010
 ('KK10') of the total population in Afro-Eurasia from 1500 BCE to 1500
@@ -30,7 +30,7 @@ To simply run the model, in the source directory, run:
 
 python3 NADSMX.py --show_figures OldWorld_HF50
 
-You may want to redirect the output to puruse later. Running this will
+You may want to redirect the output to peruse later. Running this will
 (re)create the subdirectory NADSMX_OldWorld_HF50, which, depending on
 the options chosen, will contain several files.  Most of the detailed
 results are dumped in a MATLAB-readable trial_N.mat file, where N is
@@ -153,7 +153,7 @@ MP, delays a little on each thread to force different random number
 seeds based on the time-of-day clock, and then finally calls the
 unfold() method on the model instance.
 
-The unfold() method calls setup_for_trail() to modify any last-minute
+The unfold() method calls setup_for_trial() to modify any last-minute
 parameters for this trial--handy if varying a parameter for
 sensitivity analysis on each trial--and then maps over each 'year' in
 the simulation (nominally every 2 years from -1500 to 1500, see
